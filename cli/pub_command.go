@@ -214,6 +214,11 @@ func (c *pubCmd) doReq(nc *nats.Conn, progress *progress.Tracker) error {
 			m, err := s.NextMsg(timeout)
 			if err != nil {
 				if err == nats.ErrTimeout {
+					// Only error if we expected replies but got none.
+					// replyCount == 0 means "wait until timeout" which is expected.
+					if rc == 0 && c.replyCount > 0 {
+						return fmt.Errorf("request timed out without any responses")
+					}
 					// continue to publish additional messages.
 					break
 				}
