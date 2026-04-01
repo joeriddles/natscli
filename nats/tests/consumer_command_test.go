@@ -139,6 +139,73 @@ func TestConsumerLS(t *testing.T) {
 	})
 }
 
+func TestConsumerLSJson(t *testing.T) {
+	withJSServer(t, func(t *testing.T, srv *server.Server, nc *nats.Conn, mgr *jsm.Manager) error {
+		name, err := setupConsumerTest(t, 1, mgr, jsm.ConsumerDescription("test consumer"))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		output := runNatsCli(t, fmt.Sprintf("--server='%s' consumer ls %s --json", srv.ClientURL(), defaultStreamName))
+
+		var consumers []map[string]any
+		if err := json.Unmarshal(output, &consumers); err != nil {
+			t.Fatalf("failed to parse JSON output: %v\n%s", err, output)
+		}
+
+		if len(consumers) != 1 {
+			t.Fatalf("expected 1 consumer, got %d", len(consumers))
+		}
+
+		c := consumers[0]
+		if c["name"] != name {
+			t.Errorf("expected consumer name %q, got %q", name, c["name"])
+		}
+		if c["stream_name"] != defaultStreamName {
+			t.Errorf("expected stream name %q, got %q", defaultStreamName, c["stream_name"])
+		}
+
+		config, ok := c["config"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected config to be a map, got %T", c["config"])
+		}
+		if config["description"] != "test consumer" {
+			t.Errorf("expected description %q, got %q", "test consumer", config["description"])
+		}
+
+		// Verify numeric fields are present
+		for _, field := range []string{"num_ack_pending", "num_pending", "num_redelivered", "num_waiting"} {
+			if _, exists := c[field]; !exists {
+				t.Errorf("expected field %q in JSON output", field)
+			}
+		}
+
+		return nil
+	})
+}
+
+func TestConsumerLSJsonNames(t *testing.T) {
+	withJSServer(t, func(t *testing.T, srv *server.Server, nc *nats.Conn, mgr *jsm.Manager) error {
+		name, err := setupConsumerTest(t, 1, mgr)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		output := runNatsCli(t, fmt.Sprintf("--server='%s' consumer ls %s --json --names", srv.ClientURL(), defaultStreamName))
+
+		var names []string
+		if err := json.Unmarshal(output, &names); err != nil {
+			t.Fatalf("failed to parse JSON output: %v\n%s", err, output)
+		}
+
+		if len(names) != 1 || names[0] != name {
+			t.Errorf("expected [%q], got %v", name, names)
+		}
+
+		return nil
+	})
+}
+
 func TestConsumerFind(t *testing.T) {
 	t.Run("--pull", func(t *testing.T) {
 		withJSServer(t, func(t *testing.T, srv *server.Server, nc *nats.Conn, mgr *jsm.Manager) error {

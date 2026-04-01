@@ -1028,8 +1028,26 @@ func (c *consumerCmd) lsAction(pc *fisk.ParseContext) error {
 	consumerNames, err := stream.ConsumerNames()
 	fisk.FatalIfError(err, "could not load Consumers")
 
-	if c.json {
+	if c.json && c.listNames {
 		err = iu.PrintJSON(consumerNames)
+		fisk.FatalIfError(err, "could not display Consumers")
+		return nil
+	}
+
+	if c.json {
+		var consumers []api.ConsumerInfo
+
+		_, _, err = stream.EachConsumer(func(cons *jsm.Consumer) {
+			cs, err := cons.LatestState()
+			if err != nil {
+				log.Printf("Could not obtain consumer state for %s: %s", cons.Name(), err)
+				return
+			}
+			consumers = append(consumers, cs)
+		})
+		fisk.FatalIfError(err, "could not load Consumers")
+
+		err = iu.PrintJSON(consumers)
 		fisk.FatalIfError(err, "could not display Consumers")
 		return nil
 	}
