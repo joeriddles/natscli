@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dustin/go-humanize"
 	"github.com/jedib0t/go-pretty/v6/text"
@@ -83,6 +84,9 @@ func (w *Writer) SetSeparator(seq string) {
 }
 
 func (w *Writer) Frender(o io.Writer) error {
+	if os.Getenv("LLMFORMAT") == "1" {
+		return w.renderMarkdown(o)
+	}
 	if os.Getenv("TESTING") == "true" {
 		return w.renderJSON(o)
 	}
@@ -225,6 +229,63 @@ func (w *Writer) renderJSON(o io.Writer) error {
 	return enc.Encode(sections)
 }
 
+func (w *Writer) renderMarkdown(o io.Writer) error {
+	if w.heading != "" {
+		fmt.Fprintf(o, "# %s\n\n", w.heading)
+	}
+
+	prev := -1
+	depth := 0
+
+	for _, row := range w.rows {
+		switch row.kind {
+		case kindIndent:
+			indent := len(row.values[0].(string))
+			if indent == 0 {
+				depth = 0
+			} else {
+				depth++
+			}
+
+		case kindTitle:
+			if prev != -1 {
+				fmt.Fprintln(o)
+			}
+			level := strings.Repeat("#", depth+2)
+			fmt.Fprintf(o, "%s %s\n\n", level, row.values[0].(string))
+			prev = row.kind
+
+		case kindRow:
+			if len(row.values) < 2 {
+				continue
+			}
+			label := row.values[0].(string)
+			value := row.values[1]
+
+			if label == "" {
+				fmt.Fprintf(o, "- %v\n", value)
+			} else {
+				fmt.Fprintf(o, "- **%s:** %v\n", label, value)
+			}
+			prev = row.kind
+
+		case kindLine:
+			if len(row.values) == 0 {
+				fmt.Fprintln(o)
+			} else {
+				parts := make([]string, len(row.values))
+				for i, v := range row.values {
+					parts[i] = fmt.Sprint(v)
+				}
+				fmt.Fprintln(o, strings.Join(parts, " "))
+			}
+			prev = row.kind
+		}
+	}
+
+	return nil
+}
+
 // Render produce the result as a string
 func (w *Writer) Render() (string, error) {
 	buf := bytes.NewBuffer([]byte{})
@@ -340,8 +401,9 @@ func (w *Writer) AddStringsAsValue(t string, data []string) {
 
 	for i, val := range vals {
 		if utf8StringLen(val) > maxLen && maxLen > 20 {
-			w := maxLen/2 - 10
-			val = fmt.Sprintf("%v ... %v", val[0:w], val[len(val)-w:])
+			runes := []rune(val)
+			half := maxLen/2 - 10
+			val = fmt.Sprintf("%v ... %v", string(runes[0:half]), string(runes[len(runes)-half:]))
 		}
 
 		if i == 0 {
@@ -366,8 +428,9 @@ func (w *Writer) AddMapStringsAsValue(t string, data map[string]string) {
 		v := data[k]
 
 		if utf8StringLen(data[k]) > maxLen && maxLen > 20 {
-			w := maxLen/2 - 10
-			v = fmt.Sprintf("%v ... %v", v[0:w], v[len(v)-w:])
+			runes := []rune(v)
+			half := maxLen/2 - 10
+			v = fmt.Sprintf("%v ... %v", string(runes[0:half]), string(runes[len(runes)-half:]))
 		}
 
 		if i == 0 {
@@ -414,8 +477,9 @@ func (w *Writer) AddMapStrings(data map[string]string) {
 		v := data[k]
 
 		if utf8StringLen(data[k]) > maxLen && maxLen > 20 {
-			w := maxLen/2 - 10
-			v = fmt.Sprintf("%v ... %v", v[0:w], v[len(v)-w:])
+			runes := []rune(v)
+			half := maxLen/2 - 10
+			v = fmt.Sprintf("%v ... %v", string(runes[0:half]), string(runes[len(runes)-half:]))
 		}
 
 		w.AddRow(k, v)
@@ -454,12 +518,7 @@ func (w *Writer) maybeAddColon(o io.Writer, v string, colorize bool) string {
 }
 
 func utf8StringLen(s string) int {
-	c := 0
-	for range s {
-		c++
-	}
-
-	return c
+	return utf8.RuneCountInString(s)
 }
 
 func F(v any) string {
@@ -501,16 +560,16 @@ func F(v any) string {
 }
 
 func HumanizeDuration(d time.Duration) string {
+	if d == math.MaxInt64 {
+		return "never"
+	}
+
 	if d < time.Millisecond {
 		return d.Round(time.Microsecond).String()
 	}
 
 	if d < time.Second {
 		return d.Round(time.Millisecond).String()
-	}
-
-	if d == math.MaxInt64 {
-		return "never"
 	}
 
 	tsecs := d / time.Second

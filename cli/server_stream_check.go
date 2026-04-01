@@ -22,9 +22,10 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/natscli/internal/util"
 
-	"github.com/choria-io/fisk"
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/natscli/internal/sysclient"
+
+	"github.com/choria-io/fisk"
 )
 
 type (
@@ -54,6 +55,7 @@ type (
 func configureStreamCheckCommand(app commandHost) {
 	sc := &StreamCheckCmd{}
 	streamCheck := app.Command("stream-check", "Check and display stream information").Action(sc.streamCheck).Hidden()
+	streamCheck.Tag("scope:system", "impact:ro")
 	streamCheck.Flag("stream", "Filter results by stream").StringVar(&sc.streamName)
 	streamCheck.Flag("raft-group", "Filter results by raft group").StringVar(&sc.raftGroup)
 	streamCheck.Flag("health", "Check health from streams").UnNegatableBoolVar(&sc.health)
@@ -110,6 +112,9 @@ func (c *StreamCheckCmd) streamCheck(_ *fisk.ParseContext) error {
 			for _, stream := range acc.Streams {
 				var ok bool
 				var m map[string]*streamDetail
+				if stream.RaftGroup == "" && stream.Cluster != nil {
+					stream.RaftGroup = stream.Cluster.RaftGroup
+				}
 				key := fmt.Sprintf("%s|%s", acc.Name, stream.RaftGroup)
 				if m, ok = streams[key]; !ok {
 					m = make(map[string]*streamDetail)
